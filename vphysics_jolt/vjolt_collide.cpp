@@ -252,17 +252,16 @@ Vector JoltPhysicsCollision::CollideGetExtent( const CPhysCollide *pCollide, con
 	JPH::Vec3 vecMaxExtent = JPH::Vec3::sZero();
 	ActOnSubShapes< JPH::ConvexShape >( pShape, [&]( const JPH::ConvexShape* pConvexShape, JPH::Mat44Arg matSubShapeTransform )
 	{
+		JPH::Mat44 matTransform = matCollideTransform * matSubShapeTransform;
 		JPH::ConvexShape::SupportingFace supportingFace;
-		pConvexShape->GetSupportingFace( vecDirection, JPH::Vec3::sReplicate( 1.0f ), supportingFace );
+		pConvexShape->GetSupportingFace( JPH::SubShapeID(), vecDirection, JPH::Vec3::sReplicate( 1.0f ), matTransform, supportingFace );
 
 		for ( const JPH::Vec3 &vecVertex : supportingFace )
 		{
-			JPH::Vec3 vecTransformedVertex = matCollideTransform * matSubShapeTransform * vecVertex;
-
-			const float flDot = vecTransformedVertex.Dot( vecDirection );
+			const float flDot = vecVertex.Dot( vecDirection );
 			if ( flDot > flMaxDot )
 			{
-				vecMaxExtent = vecTransformedVertex;
+				vecMaxExtent = vecVertex;
 				flMaxDot = flDot;
 			}
 		}
@@ -536,7 +535,20 @@ namespace ivp_compat
 		settings.mHullTolerance = 0.0f;
 		JPH::ConvexShape *pConvexShape = ShapeSettingsToShape< JPH::ConvexShape >( settings );
 		if ( !pConvexShape )
-			return nullptr;
+		{
+			// Wow that sucks, just mock up a small sphere to subsitute.
+			// This can happen for models with extremely broken collision hulls.
+			// If we don't do this, we'll crash later on because older versions of Source are missing
+			// an important nullptr check.
+			// A better solution would be to generate a valid convex hull from the points provided.
+			JPH::SphereShapeSettings sphereSettings( 1.0f );
+			pConvexShape = ShapeSettingsToShape< JPH::ConvexShape >( sphereSettings );
+			if ( !pConvexShape )
+			{
+				// This should never fail, but catching anyway
+				return nullptr;
+			}
+		}
 		
 		pConvexShape->SetUserData( pLedge->client_data );
 		return pConvexShape;
@@ -747,7 +759,7 @@ int JoltPhysicsCollision::CreateDebugMesh( CPhysCollide const *pCollisionModel, 
 	for ( auto &shape : collector.mHits )
 	{
 		JPH::Shape::GetTrianglesContext ctx;
-		shape.GetTrianglesStart( ctx, JPH::AABox::sBiggest() );
+		shape.GetTrianglesStart( ctx, JPH::AABox::sBiggest(), JPH::Vec3::sZero() );
 		for ( ;; )
 		{
 			int nSubShapeTriCount = shape.GetTrianglesNext( ctx, nRequestCount, reinterpret_cast<JPH::Float3*>( &pVerts[ nAccumTris * 3 ] ), nullptr /* materials */);

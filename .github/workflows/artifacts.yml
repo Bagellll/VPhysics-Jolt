@@ -7,7 +7,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source_branch: [sdk2013-sp, sdk2013-mp, asw]
+        source_branch: [sdk2013-sp, sdk2013-mp, asw, gmod]
 
     runs-on: windows-2022
 
@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        source_branch: [sdk2013-sp, sdk2013-mp]
+        source_branch: [sdk2013-sp, sdk2013-mp, gmod]
 
     runs-on: ubuntu-latest
     container: debian:bullseye
@@ -79,7 +79,11 @@ jobs:
     - name: Build GCC x86
       working-directory: ${{ matrix.source_branch }}/src
       run: |
-        ./createjoltprojects.sh
+        chmod +x createjoltprojects.sh
+        chmod +x devtools/bin/vpc_linux
+        chmod +x devtools/bin/vpc
+        chmod +x devtools/gendbg.sh
+        ./createjoltprojects.sh 
         make -f jolt.mak -j $(nproc)
 
     - name: Upload artifacts

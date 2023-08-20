@@ -53,46 +53,51 @@ static ConVar vjolt_linearcast( "vjolt_linearcast", "1", FCVAR_NONE, "Whether bo
 static ConVar vjolt_initial_simulation( "vjolt_initial_simulation", "0", FCVAR_NONE, "Whether to pre-settle physics objects on map load." );
 
 static ConVar vjolt_substeps_collision( "vjolt_substeps_collision", "1", FCVAR_NONE, "Number of collision steps to perform.", true, 0.0f, true, 4.0f );
-static ConVar vjolt_substeps_integration( "vjolt_substeps_integration", "1", FCVAR_NONE, "Number of integration substeps to perform.", true, 0.0f, true, 4.0f );
 
 static ConVar vjolt_baumgarte_factor( "vjolt_baumgarte_factor", "0.2", FCVAR_NONE, "Baumgarte stabilization factor (how much of the position error to 'fix' in 1 update). Changing this may help with constraint stability. Requires a map restart to change.", true, 0.0f, true, 1.0f );
 
 //-------------------------------------------------------------------------------------------------
 
-// Function that determines if two object layers can collide
-static bool JoltObjectCanCollide( JPH::ObjectLayer inObject1, JPH::ObjectLayer inObject2 )
+class JoltObjectLayerPairFilter final : public JPH::ObjectLayerPairFilter
 {
-	switch ( inObject1 )
+public:
+	// Function that determines if two object layers can collide
+	bool ShouldCollide( JPH::ObjectLayer inObject1, JPH::ObjectLayer inObject2 ) const override
 	{
-	// NO_COLLIDE collides with nothing.
-	case Layers::NO_COLLIDE:
-		return	false;
-	// NON_MOVING collides with moving objects and debris.
-	case Layers::NON_MOVING_WORLD:
-	case Layers::NON_MOVING_OBJECT:
-		return	inObject2 == Layers::MOVING ||
-				inObject2 == Layers::DEBRIS;
-	// MOVING collides with moving and non-moving objects.
-	case Layers::MOVING:
-		return	inObject2 == Layers::MOVING ||
-				inObject2 == Layers::NON_MOVING_WORLD ||
-				inObject2 == Layers::NON_MOVING_OBJECT;
+		switch ( inObject1 )
+		{
+		// NO_COLLIDE collides with nothing.
+		case Layers::NO_COLLIDE:
+			return	false;
+		// NON_MOVING collides with moving objects and debris.
+		case Layers::NON_MOVING_WORLD:
+		case Layers::NON_MOVING_OBJECT:
+			return	inObject2 == Layers::MOVING ||
+					inObject2 == Layers::DEBRIS;
+		// MOVING collides with moving and non-moving objects.
+		case Layers::MOVING:
+			return	inObject2 == Layers::MOVING ||
+					inObject2 == Layers::NON_MOVING_WORLD ||
+					inObject2 == Layers::NON_MOVING_OBJECT;
 	
-	// DEBRIS only collides with non-moving objects.
-	case Layers::DEBRIS:
-		return	inObject2 == Layers::NON_MOVING_WORLD || inObject2 == Layers::NON_MOVING_OBJECT;
-	default:
-		VJoltAssert( false );
-		return false;
+		// DEBRIS only collides with non-moving objects.
+		case Layers::DEBRIS:
+			return	inObject2 == Layers::NON_MOVING_WORLD || inObject2 == Layers::NON_MOVING_OBJECT;
+		default:
+			VJoltAssert( false );
+			return false;
 	}
+};
+
+private:
 };
 
 // BroadPhaseLayerInterface implementation
 // This defines a mapping between object and broadphase layers.
-class JoltBPLayerInterfaceImpl final : public JPH::BroadPhaseLayerInterface
+class JoltBroadPhaseLayerInterface final : public JPH::BroadPhaseLayerInterface
 {
 public:
-	JoltBPLayerInterfaceImpl()
+	JoltBroadPhaseLayerInterface()
 	{
 		// Create a mapping table from object to broad phase layer
 		mObjectToBroadPhase[Layers::NON_MOVING_WORLD] = BroadPhaseLayers::NON_MOVING_WORLD;
@@ -132,33 +137,41 @@ private:
 	JPH::BroadPhaseLayer mObjectToBroadPhase[Layers::NUM_LAYERS];
 };
 
-// Function that determines if two broadphase layers can collide
-static bool JoltBroadPhaseCanCollide( JPH::ObjectLayer inLayer1, JPH::BroadPhaseLayer inLayer2 )
+class JoltObjectVsBroadPhaseLayerFilter final : public JPH::ObjectVsBroadPhaseLayerFilter
 {
-	switch (inLayer1)
+public:
+	// Function that determines if two broadphase layers can collide
+	bool ShouldCollide( JPH::ObjectLayer inLayer1, JPH::BroadPhaseLayer inLayer2 ) const override
 	{
-	// NO_COLLIDE collides with nothing.
-	case Layers::NO_COLLIDE:
-		return	false;
-	// NON_MOVING collides with moving objects and debris.
-	case Layers::NON_MOVING_WORLD:
-	case Layers::NON_MOVING_OBJECT:
-		return	inLayer2 == BroadPhaseLayers::MOVING ||
-				inLayer2 == BroadPhaseLayers::DEBRIS;
-	// MOVING collides with moving and non-moving objects.
-	case Layers::MOVING:
-		return	inLayer2 == BroadPhaseLayers::MOVING ||
-				inLayer2 == BroadPhaseLayers::NON_MOVING_WORLD ||
-				inLayer2 == BroadPhaseLayers::NON_MOVING_OBJECT;
+		switch (inLayer1)
+		{
+		// NO_COLLIDE collides with nothing.
+		case Layers::NO_COLLIDE:
+			return false;
+
+		// NON_MOVING collides with moving objects and debris.
+		case Layers::NON_MOVING_WORLD:
+		case Layers::NON_MOVING_OBJECT:
+			return inLayer2 == BroadPhaseLayers::MOVING ||
+				   inLayer2 == BroadPhaseLayers::DEBRIS;
+
+		// MOVING collides with moving and non-moving objects.
+		case Layers::MOVING:
+			return inLayer2 == BroadPhaseLayers::MOVING ||
+				   inLayer2 == BroadPhaseLayers::NON_MOVING_WORLD ||
+				   inLayer2 == BroadPhaseLayers::NON_MOVING_OBJECT;
 	
-	// DEBRIS only collides with non-moving objects.
-	case Layers::DEBRIS:
-		return	inLayer2 == BroadPhaseLayers::NON_MOVING_WORLD || inLayer2 == BroadPhaseLayers::NON_MOVING_OBJECT;
-	default:
-		VJoltAssert( false );
-		return false;
+		// DEBRIS only collides with non-moving objects.
+		case Layers::DEBRIS:
+			return inLayer2 == BroadPhaseLayers::NON_MOVING_WORLD || inLayer2 == BroadPhaseLayers::NON_MOVING_OBJECT;
+
+		default:
+			VJoltAssert( false );
+			return false;
+		}
 	}
-}
+private:
+};
 
 //-------------------------------------------------------------------------------------------------
 
@@ -180,7 +193,9 @@ CON_COMMAND( vjolt_environment_dump_server, "Dumps the next simulated environmen
 
 //-------------------------------------------------------------------------------------------------
 
-JoltBPLayerInterfaceImpl JoltPhysicsEnvironment::s_BPLayerInterface;
+JoltBroadPhaseLayerInterface JoltPhysicsEnvironment::s_BroadPhaseLayerInterface;
+JoltObjectVsBroadPhaseLayerFilter JoltPhysicsEnvironment::s_BroadPhaseFilter;
+JoltObjectLayerPairFilter JoltPhysicsEnvironment::s_LayerPairFilter;
 
 JoltPhysicsEnvironment::JoltPhysicsEnvironment()
 	: m_ContactListener( m_PhysicsSystem )
@@ -189,7 +204,7 @@ JoltPhysicsEnvironment::JoltPhysicsEnvironment()
 
 	m_PhysicsSystem.Init(
 		kMaxBodies, kNumBodyMutexes, kMaxBodyPairs, kMaxContactConstraints,
-		s_BPLayerInterface, JoltBroadPhaseCanCollide, JoltObjectCanCollide );
+		s_BroadPhaseLayerInterface, s_BroadPhaseFilter, s_LayerPairFilter);
 
 	{
 		JPH::PhysicsSettings settings = m_PhysicsSystem.GetPhysicsSettings();
@@ -463,9 +478,9 @@ JoltPhysicsSpring::JoltPhysicsSpring( JPH::PhysicsSystem *pPhysicsSystem, JoltPh
 	settings.mMinDistance = m_OnlyStretch ? 0.0f : SourceToJolt::Distance( pParams->naturalLength );
 	settings.mMaxDistance = SourceToJolt::Distance( pParams->naturalLength );
 
-	settings.mFrequency = GetSpringFrequency( pParams->constant, m_pObjectStart, m_pObjectEnd );
-	// TODO(Josh): The damping values are normally fucking crazy like 5500 from Source... wtf is going on here.
-	settings.mDamping = 0.0f;
+	settings.mLimitsSpringSettings.mMode = JPH::ESpringMode::StiffnessAndDamping;
+	settings.mLimitsSpringSettings.mFrequency = pParams->constant;
+	settings.mLimitsSpringSettings.mDamping = pParams->damping;
 
 	m_pConstraint = static_cast< JPH::DistanceConstraint * >( settings.Create( *refBody, *attBody ) );
 	m_pConstraint->SetEnabled( true );
@@ -506,7 +521,8 @@ void JoltPhysicsSpring::SetSpringConstant( float flSpringConstant )
 	m_pObjectStart->Wake();
 	m_pObjectEnd->Wake();
 
-	m_pConstraint->SetFrequency( GetSpringFrequency( flSpringConstant, m_pObjectStart, m_pObjectEnd ) );
+	JPH::SpringSettings& springSettings = m_pConstraint->GetLimitsSpringSettings();
+	springSettings.mStiffness = flSpringConstant;
 }
 
 void JoltPhysicsSpring::SetSpringDamping( float flSpringDamping )
@@ -514,7 +530,8 @@ void JoltPhysicsSpring::SetSpringDamping( float flSpringDamping )
 	m_pObjectStart->Wake();
 	m_pObjectEnd->Wake();
 
-	//m_pConstraint->SetDamping( flSpringDamping );
+	JPH::SpringSettings& springSettings = m_pConstraint->GetLimitsSpringSettings();
+	springSettings.mDamping = flSpringDamping;
 }
 
 void JoltPhysicsSpring::SetSpringLength( float flSpringLength )
@@ -758,7 +775,6 @@ void JoltPhysicsEnvironment::Simulate( float deltaTime )
 	for ( IJoltPhysicsController *pController : m_pPhysicsControllers )
 		pController->OnPreSimulate( deltaTime );
 
-	const int nIntegrationSubSteps = vjolt_substeps_integration.GetInt();
 	const int nCollisionSubSteps = vjolt_substeps_collision.GetInt();
 
 	// If we haven't already, optimize the broadphase, currently this can only happen once per-environment
@@ -777,20 +793,20 @@ void JoltPhysicsEnvironment::Simulate( float deltaTime )
 			int nIterCount = 0;
 			while ( m_PhysicsSystem.GetNumActiveBodies() && nIterCount < MaxInitialIterations )
 			{
-				m_PhysicsSystem.Update( InitialIterationTimescale, 1, InitialSubSteps, tempAllocator, jobSystem );
+				m_PhysicsSystem.Update( InitialIterationTimescale, InitialSubSteps, tempAllocator, jobSystem );
 				nIterCount++;
 			}
 		}
 		else
 		{
 			// Move things around!
-			m_PhysicsSystem.Update( deltaTime, nCollisionSubSteps, nIntegrationSubSteps, tempAllocator, jobSystem );
+			m_PhysicsSystem.Update( deltaTime, nCollisionSubSteps, tempAllocator, jobSystem );
 		}
 	}
 	else
 	{
 		// Move things around!
-		m_PhysicsSystem.Update( deltaTime, nCollisionSubSteps, nIntegrationSubSteps, tempAllocator, jobSystem );
+		m_PhysicsSystem.Update( deltaTime, nCollisionSubSteps, tempAllocator, jobSystem );
 	}
 	m_ContactListener.FlushCallbacks();
 

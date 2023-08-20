@@ -280,7 +280,7 @@ void JoltPhysicsObject::SetMass( float mass )
 		JPH::MassProperties massProperties = m_pBody->GetShape()->GetMassProperties();
 		massProperties.ScaleToMass( mass );
 		massProperties.mInertia( 3, 3 ) = 1.0f;
-		pMotionProperties->SetMassProperties( massProperties );
+		pMotionProperties->SetMassProperties( JPH::EAllowedDOFs::All, massProperties );
 
 		CalculateBuoyancy();
 	}
@@ -396,7 +396,7 @@ float JoltPhysicsObject::GetSphereRadius() const
 		return 0.0f;
 
 	const JPH::SphereShape *pSphereShape = static_cast< const JPH::SphereShape * >( m_pBody->GetShape() );
-	return pSphereShape->GetRadius();
+	return JoltToSource::Distance( pSphereShape->GetRadius() );
 }
 
 void JoltPhysicsObject::SetSphereRadius( float radius )
@@ -979,7 +979,7 @@ void JoltPhysicsObject::RemoveTrigger()
 		const JPH::Shape *pShape = GetCollide()->ToShape();
 
 		m_pPhysicsSystem->GetNarrowPhaseQueryNoLock().CollideShape(
-			pShape, JPH::Vec3::sReplicate( 1.0f ), queryTransform, collideSettings, collector,
+			pShape, JPH::Vec3::sReplicate( 1.0f ), queryTransform, collideSettings, JPH::Vec3::sZero(), collector,
 			JPH::SpecifiedBroadPhaseLayerFilter( BroadPhaseLayers::MOVING ), JPH::SpecifiedObjectLayerFilter( Layers::MOVING ), body_filter );
 	}
 
