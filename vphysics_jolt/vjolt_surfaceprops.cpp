@@ -104,6 +104,10 @@ JoltPhysicsSurfaceProps::JoltPhysicsSurfaceProps()
 
 int JoltPhysicsSurfaceProps::ParseSurfaceData( const char *pFilename, const char *pTextfile )
 {
+	char *pLastBracket = const_cast< char * >( strrchr( pTextfile, '}' ) );
+	if ( pLastBracket ) [[likely]]
+		*++pLastBracket = '\0';
+
 	KeyValues::AutoDelete kv( SurfacePropsToKeyValues( pTextfile ) );
 
 	for ( KeyValues* pSurface = kv->GetFirstSubKey(); pSurface != nullptr; pSurface = pSurface->GetNextKey() )
